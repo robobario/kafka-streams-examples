@@ -123,12 +123,12 @@ public class AccessKtableStateStoreUsingPrefix {
     }
 
     private static void createTable(Admin admin, String name) {
-        NewTopic ktable = new NewTopic(name, Optional.empty(), Optional.empty());
+        NewTopic topic = new NewTopic(name, Optional.empty(), Optional.empty());
         try {
-            admin.createTopics(List.of(ktable)).all().get(20, TimeUnit.SECONDS);
+            admin.createTopics(List.of(topic)).all().get(20, TimeUnit.SECONDS);
         } catch (Exception e) {
             if (e.getCause() instanceof TopicExistsException) {
-                System.out.println("topic " + name + " exists already");
+                System.out.println("topic " + name + " exists already, continuing");
             } else {
                 throw new RuntimeException(e);
             }
@@ -143,23 +143,27 @@ public class AccessKtableStateStoreUsingPrefix {
         }
 
         @Override
-        public void handle(HttpExchange t) throws IOException {
+        public void handle(HttpExchange exchange) throws IOException {
             try {
-                String path = t.getRequestURI().getPath();
+                String path = exchange.getRequestURI().getPath();
                 String prefix = path.substring(path.lastIndexOf("/") + 1);
-                ReadOnlyKeyValueStore<Object, Object> store = streams.store(StoreQueryParameters.fromNameAndType(STORE_NAME, QueryableStoreTypes.keyValueStore()));
-                KeyValueIterator<Object, Object> iterator = store.prefixScan(prefix, new StringSerializer());
-                StringBuilder stringBuilder = new StringBuilder();
-                iterator.forEachRemaining(objectObjectKeyValue -> stringBuilder.append(objectObjectKeyValue.value.toString()));
-                String response = stringBuilder.toString();
-                t.sendResponseHeaders(200, response.length());
-                OutputStream os = t.getResponseBody();
+                String response = concatenatedValuesFor(prefix);
+                exchange.sendResponseHeaders(200, response.length());
+                OutputStream os = exchange.getResponseBody();
                 os.write(response.getBytes());
                 os.close();
             } catch (Exception e) {
                 e.printStackTrace();
                 throw e;
             }
+        }
+
+        private String concatenatedValuesFor(String prefix) {
+            ReadOnlyKeyValueStore<Object, Object> store = streams.store(StoreQueryParameters.fromNameAndType(STORE_NAME, QueryableStoreTypes.keyValueStore()));
+            KeyValueIterator<Object, Object> iterator = store.prefixScan(prefix, new StringSerializer());
+            StringBuilder stringBuilder = new StringBuilder();
+            iterator.forEachRemaining(objectObjectKeyValue -> stringBuilder.append(objectObjectKeyValue.value.toString()));
+            return stringBuilder.toString();
         }
     }
 }
